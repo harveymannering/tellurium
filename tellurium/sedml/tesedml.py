@@ -242,6 +242,18 @@ KISAOS_ALGORITHMPARAMETERS = {
 # All other function and class signatures can change.
 ######################################################################################################################
 
+def escapeChar(s, e="'"):
+    """ Escape any not already escaped single or double quotes in a string.
+
+    :param s: Input string
+    :type s: string
+    :param e: The character to escape
+    :type e: string
+    :return: The escaped string
+    """
+    from re import sub
+    return sub(r'(^|[^\])'+e,'\\'+e,s)
+
 def sedmlToPython(inputStr, workingDir=None):
     """ Convert sedml file to python code.
 
@@ -1631,7 +1643,7 @@ class SEDMLCodeFactory(object):
             lines.append("for k in range({}.shape[1]):".format(xId))
             lines.append("    extra_args = {}")
             lines.append("    if k == 0:")
-            lines.append("        extra_args['name'] = '{}'".format(yLabel))
+            lines.append("        extra_args['name'] = r'{}'".format(escapeChar(yLabel)))
             lines.append("    tefig.addXYDataset({xarr}[:,k], {yarr}[:,k], color='{color}', tag='{tag}', logx={logx}, logy={logy}, **extra_args)".format(xarr=xId, yarr=yId, color=color, tag=tag, logx=logX, logy=logY))
 
             # FIXME: endpoints must be handled via plotting functions
