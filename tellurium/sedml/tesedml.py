@@ -254,6 +254,9 @@ def escapeChar(s, e="'"):
     from re import sub
     return sub(r'(^|[^\\])'+e,'\\'+e,s)
 
+def legalizeId(s):
+    return 'sedsym_'+s
+
 def sedmlToPython(inputStr, workingDir=None):
     """ Convert sedml file to python code.
 
@@ -475,8 +478,8 @@ class SEDMLCodeFactory(object):
         env.globals['modelToPython'] = self.modelToPython
         env.globals['dataDescriptionToPython'] = self.dataDescriptionToPython
         env.globals['taskToPython'] = self.taskToPython
-        env.globals['dataGeneratorToPython'] = self.dataGeneratorToPython
         env.globals['outputToPython'] = self.outputToPython
+        env.globals['dataGeneratorToPython'] = self.dataGeneratorToPython
 
         # timestamp
         time = datetime.datetime.now()
@@ -519,7 +522,7 @@ class SEDMLCodeFactory(object):
             # read information from exec symbols
             dg_data = {}
             for dg in self.doc.getListOfDataGenerators():
-                dg_id = dg.getId()
+                dg_id = legalizeId(dg.getId())
                 dg_data[dg_id] = symbols[dg_id]
             result['dataGenerators'] = dg_data
             return result
@@ -1487,7 +1490,7 @@ class SEDMLCodeFactory(object):
 
         # calculate data generator
         value = evaluableMathML(mathml, variables=variables, array=True)
-        lines.append("{} = {}".format(gid, value))
+        lines.append("{} = {}".format(legalizeId(gid), value))
 
         return "\n".join(lines)
 
@@ -1524,7 +1527,7 @@ class SEDMLCodeFactory(object):
             # these are the columns
             headers.append(dataSet.getLabel())
             # data generator (the id is the id of the data in python)
-            dgId = dataSet.getDataReference()
+            dgId = legalizeId(dataSet.getDataReference())
             dgIds.append(dgId)
             columns.append("{}[:,k]".format(dgId))
         # create data frames for the repeats
@@ -1624,8 +1627,8 @@ class SEDMLCodeFactory(object):
         for kc, curve in enumerate(output.getListOfCurves()):
             logX = curve.getLogX()
             logY = curve.getLogY()
-            xId = curve.getXDataReference()
-            yId = curve.getYDataReference()
+            xId = legalizeId(curve.getXDataReference())
+            yId = legalizeId(curve.getYDataReference())
             dgx = doc.getDataGenerator(xId)
             dgy = doc.getDataGenerator(yId)
             color = settings.colors[kc % len(settings.colors)]
@@ -1699,9 +1702,9 @@ class SEDMLCodeFactory(object):
             xId = surf.getXDataReference()
             yId = surf.getYDataReference()
             zId = surf.getZDataReference()
-            dgx = doc.getDataGenerator(xId)
-            dgy = doc.getDataGenerator(yId)
-            dgz = doc.getDataGenerator(zId)
+            dgx = legalizeId(doc.getDataGenerator(xId))
+            dgy = legalizeId(doc.getDataGenerator(yId))
+            dgz = legalizeId(doc.getDataGenerator(zId))
             color = settings.colors[kc % len(settings.colors)]
 
             zLabel = zId
