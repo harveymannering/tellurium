@@ -252,7 +252,7 @@ def escapeChar(s, e="'"):
     :return: The escaped string
     """
     from re import sub
-    return sub(r'(^|[^\])'+e,'\\'+e,s)
+    return sub(r'(^|[^\\])'+e,'\\'+e,s)
 
 def sedmlToPython(inputStr, workingDir=None):
     """ Convert sedml file to python code.
