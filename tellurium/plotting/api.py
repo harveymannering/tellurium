@@ -1,5 +1,6 @@
 from __future__ import print_function, division, absolute_import
 
+
 # _plot_index = 0
 def plot(x, y, show=True, **kwargs):
     """ Create a 2D scatter plot.
@@ -30,6 +31,7 @@ def plot(x, y, show=True, **kwargs):
     # global _plot_index
     return getPlottingEngine().plot(x, y, show=show, **kwargs)
 
+
 def plot_text(x, y, text, show=True, **kwargs):
     from .. import getPlottingEngine
     from numpy import array
@@ -41,33 +43,41 @@ def plot_text(x, y, text, show=True, **kwargs):
         text = [text]
     return getPlottingEngine().plot_text(x, y, text=text, show=show, **kwargs)
 
+
 def show(reset=True):
     from .. import getPlottingEngine
     return getPlottingEngine().show(reset=reset)
+
 
 def nextFigure(*args, **kwargs):
     from .. import getPlottingEngine
     if nextFigure.tiledFigure is not None:
         fig = nextFigure.tiledFigure.nextFigure(*args, **kwargs)
-        #if nextFigure.tiledFigure.isExhausted():
-            #nextFigure.tiledFigure = None
+        # if nextFigure.tiledFigure.isExhausted():
+        # nextFigure.tiledFigure = None
         return fig
     else:
         return getPlottingEngine().newFigure(*args, **kwargs)
+
+
 nextFigure.tiledFigure = None
+
 
 def newTiledFigure(*args, **kwargs):
     from .. import getPlottingEngine
     nextFigure.tiledFigure = getPlottingEngine().newTiledFigure(*args, **kwargs)
     return nextFigure.tiledFigure
 
+
 def newLowerTriFigure(*args, **kwargs):
     from .. import getPlottingEngine
     nextFigure.tiledFigure = getPlottingEngine().newLowerTriFigure(*args, **kwargs)
     return nextFigure.tiledFigure
 
+
 def tiledFigure():
     return nextFigure.tiledFigure
+
 
 def clearTiledFigure():
     nextFigure.tiledFigure = None

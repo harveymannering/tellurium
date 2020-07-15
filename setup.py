@@ -8,6 +8,7 @@
 
 from setuptools import setup
 import os
+
 try:
     with open(os.path.join(os.path.dirname(__file__), 'VERSION.txt'), 'r') as f:
         version = f.read().rstrip()
@@ -20,6 +21,8 @@ setup(name='tellurium',
       version=version,
       author='J. Kyle Medley, Kiri Choi, Matthias König, Lucian Smith, Herbert M. Sauro',
       description='Tellurium: An biological modeling environment for Python',
+      long_description=open('README.md').read(),
+      long_description_content_type="text/markdown",
       url='http://tellurium.analogmachine.org/',
       packages=[
           'tellurium',
@@ -31,9 +34,9 @@ setup(name='tellurium',
           'tellurium.teconverters',
           'tellurium.teio',
           'tellurium.utils',
-        #   'tellurium.optimization',
+          #   'tellurium.optimization',
           'tellurium.visualization',
-        #   'tellurium.tests',
+          #   'tellurium.tests',
       ],
       package_data={
           "tellurium": ["*.txt"],
@@ -68,5 +71,7 @@ setup(name='tellurium',
           'ipykernel>=4.6.1',
           # testing
           'pytest',
-          ]
+      ],
+      platforms=["Windows", "Linux", "Unix", "Mac OS-X"],
+
       )
