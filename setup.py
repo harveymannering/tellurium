@@ -42,36 +42,7 @@ setup(name='tellurium',
           "tellurium": ["*.txt"],
           "tellurium.sedml": ["templates/*.template"],
       },
-      install_requires=[
-          # general
-          'numpy>=1.11.0',  # 0.13.1
-          'scipy>=0.19.0',  # 0.19.1
-          'matplotlib>=2.0.2',
-          'pandas>=0.20.2',
-          # SBW-derived
-          'libroadrunner>=2.0.0',
-          'phrasedml>=1.0.9',
-          'antimony>=2.12.0',
-          #'rrplugins>=1.1.8',
-          'sbml2matlab>=0.9.1',
-          # standards
-          'tesbml>=5.18.1',
-          'tenuml>=1.0.0',
-          'tesedml>=0.4.3',
-          'tecombine>=0.2.2',
-          # misc
-          'appdirs>=1.4.3',
-          'jinja2>=2.9.6',
-          'plotly>=2.0.12',
-          'requests',
-          # Jupyter / IPython
-          'jupyter-client>=5.1.0',
-          'jupyter-core>=4.3.0',
-          'ipython',
-          'ipykernel>=4.6.1',
-          # testing
-          'pytest',
-      ],
+      install_requires=[i for i in open("requirements.txt").readlines() if i != ''],
       platforms=["Windows", "Linux", "Unix", "Mac OS-X"],
 
       )
