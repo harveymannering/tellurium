@@ -282,7 +282,7 @@ marker_types = {
 }
 
 surface_types = {
-    libsedml.SEDML_SURFACETYPE_BAR: "plot",
+    libsedml.SEDML_SURFACETYPE_BAR: "bar3d",
     libsedml.SEDML_SURFACETYPE_CONTOUR: "contour",
     libsedml.SEDML_SURFACETYPE_HEATMAP: "pcolormesh",
     libsedml.SEDML_SURFACETYPE_PARAMETRICCURVE: "plot",
@@ -2102,7 +2102,16 @@ class SEDMLCodeFactory(object):
                 if "fillcolor" in kwargs:
                     kwargs["color"] = kwargs["fillcolor"]
                     del kwargs["fillcolor"]
-                plotline = "ax." + mode + "({}, {}, {}".format(xId, yId, zId)
+                if mode=="bar3d":
+                    lines.append("{xId} = {xId}.reshape({xId}.size)".format(xId=xId))
+                    lines.append("{yId} = {yId}.reshape({yId}.size)".format(yId=yId))
+                    lines.append("{zId} = {zId}.reshape({zId}.size)".format(zId=zId))
+                    lines.append("zeroes = {xId} * 0".format(xId=xId))
+                    lines.append("dx = zeroes + 1")
+                    lines.append("dy = zeroes + 1")
+                    plotline = "ax." + mode + "({}, {}, zeroes, dx, dy, {}".format(xId, yId, zId)
+                else:
+                    plotline = "ax." + mode + "({}, {}, {}".format(xId, yId, zId)
                 for kwarg in kwargs:
                     plotline = plotline + ", " + kwarg + "=" + str(kwargs[kwarg])
                 # lines.append("        ax.plot({}[:,k], {}[:,k], {}[:,k], marker = '{}', color='{}', linewidth={}, markersize={}, alpha={}, label='{}')".format(xId, yId, zId, mtype, color, linewidth, markersize, alpha, zLabel))
