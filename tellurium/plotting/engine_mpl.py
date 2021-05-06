@@ -27,12 +27,12 @@ class MatplotlibEngine(PlottingEngine):
         return "<MatplotlibEngine>"
 
     @classmethod
-    def newFigure(cls, title=None, logX=False, logY=False, layout=None, xtitle=None, ytitle=None):
+    def newFigure(cls, title=None, logX=False, logY=False, layout=None, xtitle=None, ytitle=None, xlim=None, ylim=None, grid=None):
         """ Returns a figure object."""
         if layout is None:
             layout = PlottingLayout()
 
-        fig = MatplotlibFigure(title=title, layout=layout, xtitle=xtitle, ytitle=ytitle, logx=logX, logy=logY)
+        fig = MatplotlibFigure(title=title, layout=layout, xtitle=xtitle, ytitle=ytitle, logx=logX, logy=logY, xlim=xlim, ylim=ylim, grid=grid)
         return fig
 
 
@@ -55,6 +55,8 @@ class MatplotlibFigure(PlottingFigure):
         self.figsize = figsize
         self.savefig = savefig
         self.dpi = dpi
+        self.xlim = xlim
+        self.ylim = ylim
 
     def render(self):
         """ Plot the figure. Call this last."""
@@ -68,7 +70,7 @@ class MatplotlibFigure(PlottingFigure):
             if "mode" in dataset:
                 mode = dataset["mode"]
             #Set different defaults based on the mode
-            passkeys = ["alpha", "showlegend", "color", "linewidth", "marker", "mfc", "mec", "ms", "mew"]
+            passkeys = ["alpha", "showlegend", "color", "linewidth", "marker", "mfc", "mec", "ms", "mew", "xerr", "yerr"]
             if mode=="line":
                 kwargs['marker'] = ''
                 kwargs['linewidth'] = self.linewidth
@@ -108,6 +110,8 @@ class MatplotlibFigure(PlottingFigure):
                 plt.fill_between(dataset['x'], dataset['y'], **kwargs)
             elif mode == "fillBetween":
                 plt.fill_between(dataset['x'], dataset['y'], **kwargs)
+            elif mode == "errorbar":
+                plt.errorbar(dataset['x'], dataset['y'], **kwargs)
             elif mode == "bar":
                 if bartype == "horizontal":
                     if "bottom" in kwargs:
@@ -147,7 +151,7 @@ class MatplotlibFigure(PlottingFigure):
             
         # grid
         if self.grid:
-            ax.grid(linestyle='dotted', alpha=0.8)
+            ax.grid(linestyle='dotted', axis=self.grid)
             
         # TODO: implement ordinates, tags & labels
 

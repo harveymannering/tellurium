@@ -41,7 +41,7 @@ class PlottingEngine(object):
         return "<PlottingEngine>"
 
     @abc.abstractmethod
-    def newFigure(self, title=None, logX=False, logY=False, layout=None, xtitle=None, ytitle=None):
+    def newFigure(self, title=None, logX=False, logY=False, layout=None, xtitle=None, ytitle=None, xlim=None, ylim=None, grid=None):
         """ Returns PlottingFigure.
         Needs to be implemented in base class.
         """
@@ -252,7 +252,7 @@ class PlottingFigure(object):
         :return:
         """
 
-    def addXYDataset(self, x_arr, y_arr, color=None, tag=None, name=None, filter=True, alpha=None, mode=None, logx=None, logy=None, scatter=None, error_y_pos=None, error_y_neg=None, showlegend=None, text=None, dash=None, linewidth=None, marker=None, mec=None, mfc=None, ms=None, mew=None, edgecolor=None, bottom=None, bartype=None, y2=None):
+    def addXYDataset(self, x_arr, y_arr, color=None, tag=None, name=None, filter=True, alpha=None, mode=None, logx=None, logy=None, scatter=None, error_y_pos=None, error_y_neg=None, showlegend=None, text=None, dash=None, linewidth=None, marker=None, mec=None, mfc=None, ms=None, mew=None, edgecolor=None, bottom=None, bartype=None, y2=None, xErrUp=None, xErrLow=None, yErrUp=None, yErrLow=None):
         """ Adds an X/Y dataset to the plot.
 
         :param x_arr: A numpy array describing the X datapoints. Should have the same size as y_arr.
@@ -317,12 +317,31 @@ class PlottingFigure(object):
             dataset['bartype'] = bartype
         if y2 is not None:
             dataset['y2'] = y2
+        if xErrUp is not None:
+            if xErrUp.all()==xErrLow.all():
+                dataset['xerr'] = xErrUp
+            else:
+                dataset['xerr'] = (xErrUp, xErrLow)
+            dataset['mode'] = "errorbar"
+        if yErrUp is not None:
+            if yErrUp.all() == yErrLow.all():
+                dataset['yerr'] = yErrUp
+            else:
+                dataset['yerr'] = (yErrUp, yErrLow)
+            dataset['mode'] = "errorbar"
+        
         self.xy_datasets.append(dataset)
 
     def getMergedTaggedDatasets(self):
         for datasets_for_tag in self.tagged_data.values():
             x = reduce(lambda u,v: np.concatenate((u,[np.nan],v)), (dataset['x'] for dataset in datasets_for_tag))
             y = reduce(lambda u,v: np.concatenate((u,[np.nan],v)), (dataset['y'] for dataset in datasets_for_tag))
+            xerr = None
+            yerr = None
+            if "xerr" in datasets_for_tag[0]:
+                xerr = reduce(lambda u,v: np.concatenate((u,[np.nan],v)), (dataset['xerr'] for dataset in datasets_for_tag))
+            if "yerr" in datasets_for_tag[0]:
+                yerr = reduce(lambda u,v: np.concatenate((u,[np.nan],v)), (dataset['yerr'] for dataset in datasets_for_tag))
             # merge all datasets
             result_dataset = datasets_for_tag[0] if datasets_for_tag else None
             for dataset in datasets_for_tag:
@@ -330,6 +349,10 @@ class PlottingFigure(object):
             # use the concatenated values for x and y
             result_dataset['x'] = x
             result_dataset['y'] = y
+            if xerr is not None:
+                result_dataset['xerr'] = xerr
+            if yerr is not None:
+                result_dataset['yerr'] = yerr
             if result_dataset is not None:
                 yield result_dataset
 

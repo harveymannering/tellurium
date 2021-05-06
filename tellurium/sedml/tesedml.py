@@ -661,6 +661,8 @@ class SEDMLCodeFactory(object):
                     expr = "init([{}])".format(selection.id)
                 elif selection.type == "amount":
                     expr = "init({})".format(selection.id)
+                elif selection.type == "rateOfChange":
+                    expr = "init({}')".format(selection.id)
                 lines.append("__var__{} = {}['{}']".format(vid, mid, expr))
                 variables[vid] = "__var__{}".format(vid)
 
@@ -1103,6 +1105,8 @@ class SEDMLCodeFactory(object):
                         expr = "init([{}])".format(selection.id)
                     elif selection.type == 'amount':
                         expr = "init({})".format(selection.id)
+                    elif selection.type == "rateOfChange":
+                        expr = "init({}')".format(selection.id)
 
                     # create variable
                     lines.append("__value__{} = {}['{}']".format(vid, mid, expr))
@@ -1276,6 +1280,10 @@ class SEDMLCodeFactory(object):
                         expr = selection.id
                         if selection.type == 'concentration':
                             expr = "[{}]".format(selection.id)
+                        elif selection.type == 'amount':
+                            expr = "{}".format(selection.id)
+                        elif selection.type == "rateOfChange":
+                            expr = "{}')".format(selection.id)
                         lines.append("__value__{} = {}['{}']".format(vid, mid, expr))
                         variables[vid] = "__value__{}".format(vid)
 
@@ -1386,6 +1394,10 @@ class SEDMLCodeFactory(object):
                     expr = selection.id
                     if selection.type == "concentration":
                         expr = "[{}]".format(selection.id)
+                    elif selection.type == 'amount':
+                        expr = "{}".format(selection.id)
+                    elif selection.type == "rateOfChange":
+                        expr = "{}'".format(selection.id)
                     selections.add(expr)
 
         return selections
@@ -1499,11 +1511,14 @@ class SEDMLCodeFactory(object):
         target = SEDMLCodeFactory._resolveXPath(xpath, modelId)
         if target:
             # initial concentration
-            if target.type == "concentration":
+            if target.type == "species":
                 expr = 'init([{}])'.format(target.id)
             # initial amount
             elif target.type == "amount":
                 expr = 'init({})'.format(target.id)
+            #rate of change
+            elif target.type == "rateOfChange":
+                expr = "init({}')".format(target.id)
             # other (parameter, flux, ...)
             else:
                 expr = target.id
@@ -1524,21 +1539,24 @@ class SEDMLCodeFactory(object):
         :param var: variable to resolve
         :type var: SedVariable
         :return: a single selection
-        :rtype: Selection (namedtuple: id type)
+        :rtype: Selection (namedtuple: id type function id2)
         """
-        Selection = namedtuple('Selection', 'id type')
+        Selection = namedtuple('Selection', 'id type function id2')
 
         # parse symbol expression
         if var.isSetSymbol():
             cvs = var.getSymbol()
-            astr = cvs.rsplit("symbol:")
-            sid = astr[1]
-            return Selection(sid, 'symbol')
+            astr = cvs.rsplit(":")
+            sid = astr[-1]
+            if not var.isSetTarget():
+                return Selection(sid, 'symbol', "", "")
+            target = SEDMLCodeFactory._resolveXPath(var.getTarget(), modelId)
+            return Selection(target.id, target.type, sid, "")
         # use xpath
         elif var.isSetTarget():
             xpath = var.getTarget()
             target = SEDMLCodeFactory._resolveXPath(xpath, modelId)
-            return Selection(target.id, target.type)
+            return Selection(target.id, target.type, "", "")
 
         else:
             warnings.warn("Unrecognized Selection in variable")
@@ -1582,7 +1600,7 @@ class SEDMLCodeFactory(object):
             return Target(getId(xpath), 'parameter')
         # species concentration change
         elif ("model" in xpath) and ("species" in xpath):
-            return Target(getId(xpath), 'concentration')
+            return Target(getId(xpath), 'species')
         # other
         elif ("model" in xpath) and ("id" in xpath):
             return Target(getId(xpath), 'other')
@@ -1590,6 +1608,12 @@ class SEDMLCodeFactory(object):
         else:
             raise ValueError("Unsupported target in xpath: {}".format(xpath))
 
+    @staticmethod
+    def getNumpyFunctionFor(fn):
+        samenames = ["average", "max", "min", "std"]
+        if fn in samenames:
+            return fn
+        raise ValueError("Unknown function " + fn)
 
     @staticmethod
     def dataGeneratorToPython(doc, generator):
@@ -1648,7 +1672,12 @@ class SEDMLCodeFactory(object):
                 sid = selection.id
                 if selection.type == "concentration":
                     sid = "[{}]".format(selection.id)
+                elif selection.type == 'amount':
+                    expr = "{}".format(selection.id)
+                elif selection.type == "rateOfChange":
+                    expr = "{}'".format(selection.id)
 
+                # lines.append("foo")
                 # Series of curves
                 if resetModel is True:
                     # If each entry in the task consists of a single point (e.g. steady state scan)
@@ -1657,7 +1686,16 @@ class SEDMLCodeFactory(object):
                     if 'PROCESS_TRACE' in os.environ and os.environ['PROCESS_TRACE']:
                         lines.append("__var__{} = np.concatenate([process_trace(sim['{}']) for sim in {}])".format(varId, sid, taskId))
                     else:
-                        lines.append("__var__{} = np.column_stack([sim['{}'] for sim in {}])".format(varId, sid, taskId))
+                        if selection.function == "":
+                            lines.append("__var__{} = np.column_stack([sim['{}'] for sim in {}])".format(varId, sid, taskId))
+                        else:
+                            npfn = SEDMLCodeFactory.getNumpyFunctionFor(selection.function)
+                            axis = 0
+                            if (selection.id2 == taskId):
+                                axis=1
+                            lines.append("__var__{} = np.{}([sim['{}'] for sim in {}], axis={})".format(varId, npfn, sid, taskId, axis))
+                            lines.append("__var__{} = np.transpose(np.tile(__var__{}, (len({}), 1)))".format(varId, varId, taskId))
+                            
                 else:
                     # One curve via time adjusted concatenate
                     if isTime is True:
@@ -1800,8 +1838,49 @@ class SEDMLCodeFactory(object):
             elif xLabel != allXLabel:
                 oneXLabel = False
         xtitle = ''
+        ytitle = ''
         if oneXLabel:
             xtitle = allXLabel
+        
+        logX = False
+        logY = False
+        xlim = None
+        ylim = None
+        xgrid = None
+        ygrid = None
+        if output.isSetXAxis():
+            xaxis = output.getXAxis()
+            if xaxis.isSetType():
+                logX = (xaxis.getType()==libsedml.SEDML_AXISTYPE_LOG10)
+            if xaxis.isSetName():
+                xtitle = xaxis.getName()
+            elif xaxis.isSetId():
+                xtitle = xaxis.getId()
+            if xaxis.isSetMin() and xaxis.isSetMax():
+                xlim = (xaxis.getMin(), xaxis.getMax())
+            elif xaxis.isSetMax():
+                xlim = (None, xaxis.getMax())
+            elif xaxis.isSetMin():
+                xlim = (xaxis.getMin(), None)
+            if xaxis.isSetGrid():
+                xgrid = xaxis.getGrid()
+        if output.isSetYAxis():
+            yaxis = output.getYAxis()
+            if yaxis.isSetType():
+                logY = (xaxis.getType()==libsedml.SEDML_AXISTYPE_LOG10)
+            if yaxis.isSetName():
+                ytitle = yaxis.getName()
+            elif yaxis.isSetId():
+                ytitle = yaxis.getId()
+            if yaxis.isSetMin() and yaxis.isSetMax():
+                ylim = (yaxis.getMin(), yaxis.getMax())
+            elif yaxis.isSetMax():
+                ylim = (None, yaxis.getMax())
+            elif xaxis.isSetMin():
+                ylim = (yaxis.getMin(), None)
+            if yaxis.isSetGrid():
+                ygrid = yaxis.getGrid()
+                
 
         lines.append("_stacked = False")
         # stacking, currently disabled
@@ -1811,10 +1890,21 @@ class SEDMLCodeFactory(object):
         #     xId = curve.getXDataReference()
         #     lines.append("if {}.shape[1] > 1 and te.getDefaultPlottingEngine() == 'plotly':".format(xId))
         #     lines.append("    stacked=True")
+        argline = "title='{}', xtitle='{}', ytitle='{}', logX={}, logY={}".format(title, xtitle, ytitle, logX, logY)
+        if xlim:
+            argline += ", xlim={}".format(xlim)
+        if ylim:
+            argline += ", ylim={}".format(ylim)
+        if xgrid and ygrid:
+            argline += ", grid='both'"
+        elif xgrid:
+            argline += ", grid='x'"
+        elif ygrid:
+            argline += ", grid='y'"
         lines.append("if _stacked:")
-        lines.append("    tefig = te.getPlottingEngine().newStackedFigure(title='{}', xtitle='{}')".format(title, xtitle))
+        lines.append("    tefig = te.getPlottingEngine().newStackedFigure({})".format(argline))
         lines.append("else:")
-        lines.append("    tefig = te.nextFigure(title='{}', xtitle='{}')\n".format(title, xtitle))
+        lines.append("    tefig = te.nextFigure({})\n".format(argline))
 
         lastvbar = []
         lasthbar = []
@@ -1837,6 +1927,10 @@ class SEDMLCodeFactory(object):
             dashes = []
             yId2 = None
             dgy2 = None
+            xErrUp = None
+            xErrLow = None
+            yErrUp = None
+            yErrLow = None
             
             #Data:
             xId = curve.getXDataReference()
@@ -1849,6 +1943,14 @@ class SEDMLCodeFactory(object):
                 yId = curve.getYDataReference()
                 if curve.isSetType():
                     ctype = curve_types[curve.getType()]
+                if curve.isSetXErrorUpper():
+                    xErrUp = curve.getXErrorUpper()
+                if curve.isSetXErrorLower():
+                    xErrLow = curve.getXErrorLower()
+                if curve.isSetYErrorUpper():
+                    yErrUp = curve.getYErrorUpper()
+                if curve.isSetYErrorLower():
+                    yErrLow = curve.getYErrorLower()
             dgx = doc.getDataGenerator(xId)
             dgy = doc.getDataGenerator(yId)
 
@@ -1951,6 +2053,14 @@ class SEDMLCodeFactory(object):
                 lines.append("    extra_args['bartype'] = '{bartype}'".format(bartype= bartype))
             if not yId2==None:
                 lines.append("    extra_args['y2'] = {yId2}[:,k]".format(yId2= yId2))
+            if not xErrUp==None:
+                lines.append("    extra_args['xErrUp'] = {xErrUp}[:,k]".format(xErrUp= xErrUp))
+            if not xErrLow==None:
+                lines.append("    extra_args['xErrLow'] = {xErrLow}[:,k]".format(xErrLow= xErrLow))
+            if not yErrUp==None:
+                lines.append("    extra_args['yErrUp'] = {yErrUp}[:,k]".format(yErrUp= yErrUp))
+            if not yErrLow==None:
+                lines.append("    extra_args['yErrLow'] = {yErrLow}[:,k]".format(yErrLow= yErrLow))
                 
                 
             lines.append("    tefig.addXYDataset({xId}[:,k], {yId}[:,k], color='{color}', tag='{tag}', **extra_args)".format(xId=xId, yId=yId, color=color, tag=tag))
