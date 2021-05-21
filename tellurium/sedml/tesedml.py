@@ -292,13 +292,16 @@ surface_types = {
 }
 
 symbol_values = {
-    "urn:sedml:symbol:time": ("symbol", "time"),
-    "urn:sedml:function:average": ("function", "average"),
-    "urn:sedml:function:std": ("function", "std"),
-    "urn:sedml:function:max": ("function", "max"),
-    "urn:sedml:function:min": ("function", "min"),
-    "urn:sedml:analysis:jacobian:full": ("analysis", "jacobian_full"),
-    "urn:sedml:analysis:jacobian:reduced": ("analysis", "jacobian_reduced"),
+    "urn:sedml:symbol:time": ("independent", "symbol", "time"),
+    "urn:sedml:symbol:amount": ("dependent", "symbol", "amount"),
+    "urn:sedml:symbol:concentration": ("dependent", "symbol", "concentration"),
+    "urn:sedml:symbol:particleNumber": ("dependent", "symbol", "particleNumber"),
+    "urn:sedml:function:average": ("dependent", "function", "average"),
+    "urn:sedml:function:std": ("dependent", "function", "std"),
+    "urn:sedml:function:max": ("dependent", "function", "max"),
+    "urn:sedml:function:min": ("dependent", "function", "min"),
+    "urn:sedml:analysis:jacobian:full": ("independent", "analysis", "jacobian_full"),
+    "urn:sedml:analysis:jacobian:reduced": ("independent", "analysis", "jacobian_reduced"),
 }
 
 analysis_function = {
@@ -679,16 +682,8 @@ class SEDMLCodeFactory(object):
                     lines.append("if not {mid}.getHasOnlySubstanceUnits('{sel}'):".format(mid=mid, sel=sel))
                     lines.append("    {sel}_str = '[{sel}]'".format(sel=sel))
             for selection in selections:
-                expr = selection.id
-                if selection.type == "species":
-                    expr = "init(' + {}_str + ')".format(selection.id)
-                #rate of change
-                elif selection.type == "rateOfChange":
-                    expr = "init({}')".format(selection.id)
-                # other (parameter, flux, ...)
-                else:
-                    expr = "init({})".format(selection.id)
-                lines.append("__var__{} = {}['{}']".format(vid, mid, expr))
+                expr = SEDMLCodeFactory.getSelectionString(selection.type, selection.id, init=True)
+                lines.append("__var__{} = {}[{}]".format(vid, mid, expr))
                 variables[vid] = "__var__{}".format(vid)
 
             # value is calculated with the current state of model
@@ -1136,18 +1131,10 @@ class SEDMLCodeFactory(object):
                         lines.append("    {sel}_str = '[{sel}]'".format(sel=sel))
                 for selection in selections:
                     selection = SEDMLCodeFactory.selectionFromVariable(var, mid)
-                    expr = selection.id
-                    if selection.type == "species":
-                        expr = "init(' + {}_str + ')".format(selection.id)
-                    #rate of change
-                    elif selection.type == "rateOfChange":
-                        expr = "init({}')".format(selection.id)
-                    # other (parameter, flux, ...)
-                    else:
-                        expr = "init({})".format(selection.id)
+                    expr = SEDMLCodeFactory.getSelectionString(selection.type, selection.id, init=True)
 
                     # create variable
-                    lines.append("__value__{} = {}['{}']".format(vid, mid, expr))
+                    lines.append("__value__{} = {}[{}]".format(vid, mid, expr))
                     # variable for replacement
                     variables[vid] = "__value__{}".format(vid)
 
@@ -1444,12 +1431,9 @@ class SEDMLCodeFactory(object):
                     selection = SEDMLCodeFactory.selectionFromVariable(var, modelId)
                     if selection.type=="analysis":
                         continue
-                    expr = "'" + selection.id + "'"
+                    expr = SEDMLCodeFactory.getSelectionString(selection.type, selection.id, init=False)
                     if selection.type == "species":
-                        expr = "{}_str".format(selection.id)
                         selstrs.add(selection.id)
-                    elif selection.type == "rateOfChange":
-                        expr = '"{}\'"'.format(selection.id)
                     selections.add(expr)
 
         return selections, selstrs
@@ -1569,14 +1553,8 @@ class SEDMLCodeFactory(object):
                 lines.append("{sel}_str = '{sel}'".format(sel=sel))
                 lines.append("if not {mid}.getHasOnlySubstanceUnits('{sel}'):".format(mid=modelId, sel=sel))
                 lines.append("    {sel}_str = '[{sel}]'".format(sel=sel))
-                expr = "init(' + {}_str + ')".format(target.id)
-            #rate of change
-            elif target.type == "rateOfChange":
-                expr = "init({}')".format(target.id)
-            # other (parameter, flux, ...)
-            else:
-                expr = "init({})".format(target.id)
-            lines.append("{}['{}'] = {}".format(modelId, expr, value))
+            expr = SEDMLCodeFactory.getSelectionString(target.type, target.id, init=True)
+            lines.append("{}[{}] = {}".format(modelId, expr, value))
         else:
             lines.append("# Unsupported target xpath: {}".format(xpath))
 
@@ -1602,11 +1580,27 @@ class SEDMLCodeFactory(object):
             cvs = var.getSymbol()
             if cvs not in symbol_values:
                 raise("Unknown symbol value '" + cvs + "'")
-            (stype, sid) = symbol_values[cvs]
-            if not var.isSetTarget():
-                return Selection(sid, stype, "", "")
-            target = SEDMLCodeFactory._resolveXPath(var.getTarget(), modelId)
-            return Selection(target.id, target.type, sid, "")
+            (dep, stype, sid) = symbol_values[cvs]
+            if sid=="particleNumber":
+                raise("Tellurium does not support particle number types in SED-ML.")
+            if dep=="independent":
+                if var.isSetTarget():
+                    raise("Cannot set both the 'target' and the 'symbol' if the symbol is" + cvs +  ".")
+                return Selection(sid, "symbol", "", "")
+            else:
+                if not var.isSetTarget():
+                    raise("Must also set the 'target' when the 'symbol' is" + cvs +  ".")
+                target = SEDMLCodeFactory._resolveXPath(var.getTarget(), modelId)
+                t2 = ""
+                try:
+                    if var.isSetTarget2():
+                        t2 = var.getTarget2()
+                except:
+                    pass
+                if stype=="symbol":
+                    return Selection(target.id, sid, "", t2)
+                else:
+                    return Selection(target.id, target.type, sid, t2)
         # use xpath
         elif var.isSetTarget():
             xpath = var.getTarget()
@@ -1671,6 +1665,28 @@ class SEDMLCodeFactory(object):
         raise ValueError("Unknown function " + fn)
 
     @staticmethod
+    def getSelectionString(stype, sid, init=False):
+        if stype == "species":
+            sid = "{}_str".format(sid)
+        elif stype == "concentration":
+            sid = "[{}]".format(sid)
+        elif stype == "amount":
+            sid = "{}".format(sid)
+        elif stype == "rateOfChange":
+            sid = "{}\'".format(sid)
+        else:
+            sid = "{}".format(sid)
+        if init:
+            if stype == "species":
+                sid = "'init(' + " + sid + " + ')'"
+            else:
+                sid = "'init(" + sid + ")'"
+        else:
+            if stype != "species":
+                sid = "'" + sid + "'"
+        return sid
+
+    @staticmethod
     def dataGeneratorToPython(doc, generator):
         """ Create variable from the data generators and the simulation results and data sources.
 
@@ -1724,13 +1740,7 @@ class SEDMLCodeFactory(object):
                 if task.getTypeCode() == libsedml.SEDML_TASK_REPEATEDTASK:
                     resetModel = task.getResetModel()
 
-                sid = selection.id
-                if selection.type == "species":
-                    sid = "{}_str".format(selection.id)
-                elif selection.type == "rateOfChange":
-                    sid = "'{}\''".format(selection.id)
-                else:
-                    sid = "'{}'".format(selection.id)
+                sid = SEDMLCodeFactory.getSelectionString(selection.type, selection.id, init=False)
 
                 # lines.append("foo")
                 # Series of curves
