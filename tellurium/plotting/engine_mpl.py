@@ -151,6 +151,8 @@ class MatplotlibFigure(PlottingFigure):
             
         # grid
         if self.grid:
+            if self.grid==True:
+                self.grid = "both"
             ax.grid(linestyle='dotted', axis=self.grid)
             
         # TODO: implement ordinates, tags & labels

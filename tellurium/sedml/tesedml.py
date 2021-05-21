@@ -291,6 +291,21 @@ surface_types = {
     libsedml.SEDML_SURFACETYPE_SURFACEMESH: "plot_wireframe",
 }
 
+symbol_values = {
+    "urn:sedml:symbol:time": ("symbol", "time"),
+    "urn:sedml:function:average": ("function", "average"),
+    "urn:sedml:function:std": ("function", "std"),
+    "urn:sedml:function:max": ("function", "max"),
+    "urn:sedml:function:min": ("function", "min"),
+    "urn:sedml:analysis:jacobian:full": ("analysis", "jacobian_full"),
+    "urn:sedml:analysis:jacobian:reduced": ("analysis", "jacobian_reduced"),
+}
+
+analysis_function = {
+    "jacobian_full": "getFullJacobian()",
+    "jacobian_reduced": "getReducedJacobian()",
+}
+
 ######################################################################################################################
 # Interface functions
 ######################################################################################################################
@@ -311,7 +326,7 @@ def sedmlToPython(inputStr, workingDir=None):
     return factory.toPython()
 
 
-def executeSEDML(inputStr, workingDir=None):
+def executeSEDML(inputStr, workingDir=None, saveOutputs=False):
     """ Run a SED-ML file or combine archive with results.
 
     If a workingDir is provided the files and results are written in the workingDir.
@@ -322,7 +337,7 @@ def executeSEDML(inputStr, workingDir=None):
     :rtype:
     """
     # execute the sedml
-    factory = SEDMLCodeFactory(inputStr, workingDir=workingDir)
+    factory = SEDMLCodeFactory(inputStr, workingDir=workingDir, saveOutputs=saveOutputs)
     factory.executePython()
 
 
@@ -353,7 +368,7 @@ def executeCombineArchive(omexPath,
                           printPython=False,
                           createOutputs=True,
                           saveOutputs=False,
-                          outputDir=None,
+                          outputDir=".",
                           plottingEngine=None):
     """ Run all SED-ML simulations in given COMBINE archive.
 
@@ -433,7 +448,7 @@ class SEDMLCodeFactory(object):
                  workingDir=None,
                  createOutputs=True,
                  saveOutputs=False,
-                 outputDir=None,
+                 outputDir=".",
                  plottingEngine=None
                  ):
         """ Create CodeFactory for given input.
@@ -647,28 +662,38 @@ class SEDMLCodeFactory(object):
             # resolve target change
             value = change.getNewValue()
             lines.append("# {} {}".format(xpath, value))
-            lines.append(SEDMLCodeFactory.targetToPython(xpath, value, modelId=mid))
+            lines.extend(SEDMLCodeFactory.targetToPython(xpath, value, modelId=mid))
 
         elif change.getTypeCode() == libsedml.SEDML_CHANGE_COMPUTECHANGE:
             variables = {}
             for par in change.getListOfParameters():
                 variables[par.getId()] = par.getValue()
+            selections = []
             for var in change.getListOfVariables():
                 vid = var.getId()
-                selection = SEDMLCodeFactory.selectionFromVariable(var, mid)
+                selections.append(SEDMLCodeFactory.selectionFromVariable(var, mid))
+            for selection in selections:
+                if selection.type=="species":
+                    sel = selection.id
+                    lines.append("{sel}_str = '{sel}'".format(sel=sel))
+                    lines.append("if not {mid}.getHasOnlySubstanceUnits('{sel}'):".format(mid=mid, sel=sel))
+                    lines.append("    {sel}_str = '[{sel}]'".format(sel=sel))
+            for selection in selections:
                 expr = selection.id
-                if selection.type == "concentration":
-                    expr = "init([{}])".format(selection.id)
-                elif selection.type == "amount":
-                    expr = "init({})".format(selection.id)
+                if selection.type == "species":
+                    expr = "init(' + {}_str + ')".format(selection.id)
+                #rate of change
                 elif selection.type == "rateOfChange":
                     expr = "init({}')".format(selection.id)
+                # other (parameter, flux, ...)
+                else:
+                    expr = "init({})".format(selection.id)
                 lines.append("__var__{} = {}['{}']".format(vid, mid, expr))
                 variables[vid] = "__var__{}".format(vid)
 
             # value is calculated with the current state of model
             value = evaluableMathML(change.getMath(), variables=variables)
-            lines.append(SEDMLCodeFactory.targetToPython(xpath, value, modelId=mid))
+            lines.extend(SEDMLCodeFactory.targetToPython(xpath, value, modelId=mid))
 
         elif change.getTypeCode() in [libsedml.SEDML_CHANGE_REMOVEXML,
                                       libsedml.SEDML_CHANGE_ADDXML,
@@ -1098,15 +1123,28 @@ class SEDMLCodeFactory(object):
                     variables[par.getId()] = par.getValue()
                 for var in setValue.getListOfVariables():
                     vid = var.getId()
+                selections = []
+                for var in setValue.getListOfVariables():
+                    vid = var.getId()
                     mid = var.getModelReference()
+                    selections.append(SEDMLCodeFactory.selectionFromVariable(var, mid))
+                for selection in selections:
+                    if selection.type=="species":
+                        sel = selection.id
+                        lines.append("{sel}_str = '{sel}'".format(sel=sel))
+                        lines.append("if not {mid}.getHasOnlySubstanceUnits('{sel}'):".format(mid=mid, sel=sel))
+                        lines.append("    {sel}_str = '[{sel}]'".format(sel=sel))
+                for selection in selections:
                     selection = SEDMLCodeFactory.selectionFromVariable(var, mid)
                     expr = selection.id
-                    if selection.type == 'concentration':
-                        expr = "init([{}])".format(selection.id)
-                    elif selection.type == 'amount':
-                        expr = "init({})".format(selection.id)
+                    if selection.type == "species":
+                        expr = "init(' + {}_str + ')".format(selection.id)
+                    #rate of change
                     elif selection.type == "rateOfChange":
                         expr = "init({}')".format(selection.id)
+                    # other (parameter, flux, ...)
+                    else:
+                        expr = "init({})".format(selection.id)
 
                     # create variable
                     lines.append("__value__{} = {}['{}']".format(vid, mid, expr))
@@ -1114,7 +1152,7 @@ class SEDMLCodeFactory(object):
                     variables[vid] = "__value__{}".format(vid)
 
                 # value is calculated with the current state of model
-                lines.append(SEDMLCodeFactory.targetToPython(xpath=setValue.getTarget(),
+                lines.extend(SEDMLCodeFactory.targetToPython(xpath=setValue.getTarget(),
                                                              value=evaluableMathML(setValue.getMath(), variables=variables),
                                                              modelId=setValue.getModelReference())
                              )
@@ -1153,10 +1191,22 @@ class SEDMLCodeFactory(object):
 
         # <selections> of all parents
         # ---------------------------
-        selections = SEDMLCodeFactory.selectionsForTask(doc=doc, task=node.task)
+        selections, selstrs = SEDMLCodeFactory.selectionsForTask(doc=doc, task=node.task)
         for p in parents:
-            selections.update(SEDMLCodeFactory.selectionsForTask(doc=doc, task=p.task))
+            psels, pselstrs = SEDMLCodeFactory.selectionsForTask(doc=doc, task=p.task)
+            selections.update(psels)
+            selstrs.update(pselstrs)
 
+        for sel in selstrs:
+            lines.append("{sel}_str = '{sel}'".format(sel=sel))
+            lines.append("if not {mid}.getHasOnlySubstanceUnits('{sel}'):".format(mid=mid, sel=sel))
+            lines.append("    {sel}_str = '[{sel}]'".format(sel=sel))
+            
+        sellist = "["
+        for sel in selections:
+            sellist += sel + ", "
+        sellist += "]"
+                        
         # handle result variable
         resultVariable = "{}[0]".format(task.getId())
 
@@ -1164,7 +1214,7 @@ class SEDMLCodeFactory(object):
         # <UNIFORM TIMECOURSE>
         # -------------------------------------------------------------------------
         if simType == libsedml.SEDML_SIMULATION_UNIFORMTIMECOURSE:
-            lines.append("{}.timeCourseSelections = {}".format(mid, list(selections)))
+            lines.append("{}.timeCourseSelections = {}".format(mid, sellist))
 
             initialTime = simulation.getInitialTime()
             outputStartTime = simulation.getOutputStartTime()
@@ -1185,7 +1235,7 @@ class SEDMLCodeFactory(object):
         # <ONESTEP>
         # -------------------------------------------------------------------------
         elif simType == libsedml.SEDML_SIMULATION_ONESTEP:
-            lines.append("{}.timeCourseSelections = {}".format(mid, list(selections)))
+            lines.append("{}.timeCourseSelections = {}".format(mid, sellist))
             step = simulation.getStep()
             lines.append("{} = {}.simulate(start={}, end={}, points=2)".format(resultVariable, mid, 0.0, step))
 
@@ -1194,7 +1244,7 @@ class SEDMLCodeFactory(object):
         # -------------------------------------------------------------------------
         elif simType == libsedml.SEDML_SIMULATION_STEADYSTATE:
             lines.append("{}.steadyStateSolver.setValue('{}', {})".format(mid, 'allow_presimulation', False))
-            lines.append("{}.steadyStateSelections = {}".format(mid, list(selections)))
+            lines.append("{}.steadyStateSelections = {}".format(mid, sellist))
             lines.append("{}.simulate()".format(mid))  # for stability of the steady state solver
             lines.append("{} = {}.steadyStateNamedArray()".format(resultVariable, mid))
             # no need to turn this off because it will be checked before the next simulation
@@ -1383,6 +1433,7 @@ class SEDMLCodeFactory(object):
                 modelId = modvec[0]
             
         selections = set()
+        selstrs = set()
         for dg in doc.getListOfDataGenerators():
             for var in dg.getListOfVariables():
                 if var.getTaskReference() == task.getId():
@@ -1391,16 +1442,17 @@ class SEDMLCodeFactory(object):
                     if modelId=="":
                         raise RuntimeError("Unable to determine which model a referenced task variable is from.")
                     selection = SEDMLCodeFactory.selectionFromVariable(var, modelId)
-                    expr = selection.id
-                    if selection.type == "concentration":
-                        expr = "[{}]".format(selection.id)
-                    elif selection.type == 'amount':
-                        expr = "{}".format(selection.id)
+                    if selection.type=="analysis":
+                        continue
+                    expr = "'" + selection.id + "'"
+                    if selection.type == "species":
+                        expr = "{}_str".format(selection.id)
+                        selstrs.add(selection.id)
                     elif selection.type == "rateOfChange":
-                        expr = "{}'".format(selection.id)
+                        expr = '"{}\'"'.format(selection.id)
                     selections.add(expr)
 
-        return selections
+        return selections, selstrs
 
     @staticmethod
     def uniformRangeToPython(r):
@@ -1509,24 +1561,26 @@ class SEDMLCodeFactory(object):
         :rtype:
         """
         target = SEDMLCodeFactory._resolveXPath(xpath, modelId)
+        lines = []
         if target:
-            # initial concentration
+            # initial species value
             if target.type == "species":
-                expr = 'init([{}])'.format(target.id)
-            # initial amount
-            elif target.type == "amount":
-                expr = 'init({})'.format(target.id)
+                sel = target.id
+                lines.append("{sel}_str = '{sel}'".format(sel=sel))
+                lines.append("if not {mid}.getHasOnlySubstanceUnits('{sel}'):".format(mid=modelId, sel=sel))
+                lines.append("    {sel}_str = '[{sel}]'".format(sel=sel))
+                expr = "init(' + {}_str + ')".format(target.id)
             #rate of change
             elif target.type == "rateOfChange":
                 expr = "init({}')".format(target.id)
             # other (parameter, flux, ...)
             else:
-                expr = target.id
-            line = ("{}['{}'] = {}".format(modelId, expr, value))
+                expr = "init({})".format(target.id)
+            lines.append("{}['{}'] = {}".format(modelId, expr, value))
         else:
-            line = ("# Unsupported target xpath: {}".format(xpath))
+            lines.append("# Unsupported target xpath: {}".format(xpath))
 
-        return line
+        return lines
 
     @staticmethod
     def selectionFromVariable(var, modelId):
@@ -1546,10 +1600,11 @@ class SEDMLCodeFactory(object):
         # parse symbol expression
         if var.isSetSymbol():
             cvs = var.getSymbol()
-            astr = cvs.rsplit(":")
-            sid = astr[-1]
+            if cvs not in symbol_values:
+                raise("Unknown symbol value '" + cvs + "'")
+            (stype, sid) = symbol_values[cvs]
             if not var.isSetTarget():
-                return Selection(sid, 'symbol', "", "")
+                return Selection(sid, stype, "", "")
             target = SEDMLCodeFactory._resolveXPath(var.getTarget(), modelId)
             return Selection(target.id, target.type, sid, "")
         # use xpath
@@ -1670,41 +1725,43 @@ class SEDMLCodeFactory(object):
                     resetModel = task.getResetModel()
 
                 sid = selection.id
-                if selection.type == "concentration":
-                    sid = "[{}]".format(selection.id)
-                elif selection.type == 'amount':
-                    expr = "{}".format(selection.id)
+                if selection.type == "species":
+                    sid = "{}_str".format(selection.id)
                 elif selection.type == "rateOfChange":
-                    expr = "{}'".format(selection.id)
+                    sid = "'{}\''".format(selection.id)
+                else:
+                    sid = "'{}'".format(selection.id)
 
                 # lines.append("foo")
                 # Series of curves
-                if resetModel is True:
+                if selection.type == "analysis":
+                    lines.append("__var__{} = {}.{}".format(varId, modelId, analysis_function[selection.id]))
+                elif resetModel is True:
                     # If each entry in the task consists of a single point (e.g. steady state scan)
                     # , concatenate the points. Otherwise, plot as separate curves.
                     import os
                     if 'PROCESS_TRACE' in os.environ and os.environ['PROCESS_TRACE']:
-                        lines.append("__var__{} = np.concatenate([process_trace(sim['{}']) for sim in {}])".format(varId, sid, taskId))
+                        lines.append("__var__{} = np.concatenate([process_trace(sim[{}]) for sim in {}])".format(varId, sid, taskId))
                     else:
                         if selection.function == "":
-                            lines.append("__var__{} = np.column_stack([sim['{}'] for sim in {}])".format(varId, sid, taskId))
+                            lines.append("__var__{} = np.column_stack([sim[{}] for sim in {}])".format(varId, sid, taskId))
                         else:
                             npfn = SEDMLCodeFactory.getNumpyFunctionFor(selection.function)
                             axis = 0
                             if (selection.id2 == taskId):
                                 axis=1
-                            lines.append("__var__{} = np.{}([sim['{}'] for sim in {}], axis={})".format(varId, npfn, sid, taskId, axis))
+                            lines.append("__var__{} = np.{}([sim[{}] for sim in {}], axis={})".format(varId, npfn, sid, taskId, axis))
                             lines.append("__var__{} = np.transpose(np.tile(__var__{}, (len({}), 1)))".format(varId, varId, taskId))
                             
                 else:
                     # One curve via time adjusted concatenate
                     if isTime is True:
-                        lines.append("__offsets__{} = np.cumsum(np.array([sim['{}'][-1] for sim in {}]))".format(taskId, sid, taskId))
+                        lines.append("__offsets__{} = np.cumsum(np.array([sim[{}][-1] for sim in {}]))".format(taskId, sid, taskId))
                         lines.append("__offsets__{} = np.insert(__offsets__{}, 0, 0)".format(taskId, taskId))
-                        lines.append("__var__{} = np.transpose(np.array([sim['{}']+__offsets__{}[k] for k, sim in enumerate({})]))".format(varId, sid, taskId, taskId))
+                        lines.append("__var__{} = np.transpose(np.array([sim[{}]+__offsets__{}[k] for k, sim in enumerate({})]))".format(varId, sid, taskId, taskId))
                         lines.append("__var__{} = np.concatenate(np.transpose(__var__{}))".format(varId, varId))
                     else:
-                        lines.append("__var__{} = np.transpose(np.array([sim['{}'] for sim in {}]))".format(varId, sid, taskId))
+                        lines.append("__var__{} = np.transpose(np.array([sim[{}] for sim in {}]))".format(varId, sid, taskId))
                         lines.append("__var__{} = np.concatenate(np.transpose(__var__{}))".format(varId, varId))
                 lines.append("if len(__var__{}.shape) == 1:".format(varId))
                 lines.append("     __var__{}.shape += (1,)".format(varId))
@@ -1753,28 +1810,39 @@ class SEDMLCodeFactory(object):
         headers = []
         dgIds = []
         columns = []
+        ndatasets = len(output.getListOfDataSets())
         for dataSet in output.getListOfDataSets():
             # these are the columns
             headers.append(dataSet.getLabel())
             # data generator (the id is the id of the data in python)
             dgId = dataSet.getDataReference()
             dgIds.append(dgId)
-            columns.append("{}[:,k]".format(dgId))
+            if ndatasets == 1:
+                columns.append("{}".format(dgId))
+            else:
+                columns.append("{}[:,k]".format(dgId))
         # create data frames for the repeats
         lines.append("__dfs__{} = []".format(output.getId()))
-        lines.append("for k in range({}.shape[1]):".format(dgIds[0]))
-        lines.append("    __df__k = pandas.DataFrame(np.column_stack(" + str(columns).replace("'", "") + "), \n    columns=" + str(headers) + ")")
-        lines.append("    __dfs__{}.append(__df__k)".format(output.getId()))
+        indent = ""
+        if ndatasets > 1:
+            lines.append("for k in range({}.shape[1]):".format(dgIds[0]))
+            indent = "    "
+            lines.append(indent + "__df__k = pandas.DataFrame(np.column_stack(" + str(columns).replace("'", "") + "), \n    columns=" + str(headers) + ")")
+        else:
+            lines.append(indent + "__df__k = pandas.DataFrame(" + columns[0] + ")")
+            lines.append("if hasattr(" + columns[0] + ",  'columnames'):")
+            lines.append("    __df__k.columns = " +  columns[0] + ".colnames")
+        lines.append(indent + "__dfs__{}.append(__df__k)".format(output.getId()))
         # save as variable in Tellurium
-        lines.append("    te.setLastReport(__df__k)")
+        lines.append(indent + "te.setLastReport(__df__k)")
         if self.saveOutputs and self.createOutputs:
 
             lines.append(
-                "    filename = os.path.join('{}', '{}.{}')".format(self.outputDir, output.getId(), self.reportFormat))
+                indent + "filename = os.path.join('{}', '{}_' + str(k) + '.{}')".format(self.outputDir, output.getId(), self.reportFormat))
             lines.append(
-                "    __df__k.to_csv(filename, sep=',', index=False)")
+                indent + "__df__k.to_csv(filename, sep=',', index=False)")
             lines.append(
-                "    print('Report {}: {{}}'.format(filename))".format(output.getId()))
+                indent + "print('Report {}: {{}}'.format(filename))".format(output.getId()))
         return lines
 
 
