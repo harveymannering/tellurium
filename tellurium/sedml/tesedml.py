@@ -296,6 +296,7 @@ symbol_values = {
     "urn:sedml:symbol:amount": ("dependent", "symbol", "amount"),
     "urn:sedml:symbol:concentration": ("dependent", "symbol", "concentration"),
     "urn:sedml:symbol:particleNumber": ("dependent", "symbol", "particleNumber"),
+    "urn:sedml:symbol:rateOfChange": ("dependent", "symbol", "rateOfChange"),
     "urn:sedml:function:average": ("dependent", "function", "average"),
     "urn:sedml:function:std": ("dependent", "function", "std"),
     "urn:sedml:function:max": ("dependent", "function", "max"),
@@ -470,7 +471,7 @@ class SEDMLCodeFactory(object):
         self.createOutputs = createOutputs
         self.saveOutputs = saveOutputs
         self.outputDir = outputDir
-        self.plotFormat = "pdf"
+        self.plotFormat = "png"
         self.reportFormat = "csv"
 
         if not plottingEngine:
@@ -574,6 +575,10 @@ class SEDMLCodeFactory(object):
 
         # FIXME: better solution for exec traceback
         filename = os.path.join(tempfile.gettempdir(), 'te-generated-sedml.py')
+        
+        #LSDEBUGfile = open("te_generated_sedml.py", "w")
+        #LSDEBUGfile.write(code)
+        #LSDEBUGfile.close()
 
         try:
             # Use of exec carries the usual security warnings
@@ -1579,17 +1584,17 @@ class SEDMLCodeFactory(object):
         if var.isSetSymbol():
             cvs = var.getSymbol()
             if cvs not in symbol_values:
-                raise("Unknown symbol value '" + cvs + "'")
+                raise ValueError("Unknown symbol value '" + cvs + "'")
             (dep, stype, sid) = symbol_values[cvs]
             if sid=="particleNumber":
-                raise("Tellurium does not support particle number types in SED-ML.")
+                raise ValueError("Tellurium does not support particle number types in SED-ML.")
             if dep=="independent":
                 if var.isSetTarget():
-                    raise("Cannot set both the 'target' and the 'symbol' if the symbol is" + cvs +  ".")
-                return Selection(sid, "symbol", "", "")
+                    raise ValueError("Cannot set both the 'target' and the 'symbol' if the symbol is" + cvs +  ".")
+                return Selection(sid, stype, "", "")
             else:
                 if not var.isSetTarget():
-                    raise("Must also set the 'target' when the 'symbol' is" + cvs +  ".")
+                    raise ValueError("Must also set the 'target' when the 'symbol' is" + cvs +  ".")
                 target = SEDMLCodeFactory._resolveXPath(var.getTarget(), modelId)
                 t2 = ""
                 try:
@@ -1673,7 +1678,7 @@ class SEDMLCodeFactory(object):
         elif stype == "amount":
             sid = "{}".format(sid)
         elif stype == "rateOfChange":
-            sid = "{}\'".format(sid)
+            sid = "{}\\\'".format(sid)
         else:
             sid = "{}".format(sid)
         if init:
@@ -1833,6 +1838,7 @@ class SEDMLCodeFactory(object):
                 columns.append("{}[:,k]".format(dgId))
         # create data frames for the repeats
         lines.append("__dfs__{} = []".format(output.getId()))
+        lines.append("index = False")
         indent = ""
         if ndatasets > 1:
             lines.append("for k in range({}.shape[1]):".format(dgIds[0]))
@@ -1840,8 +1846,10 @@ class SEDMLCodeFactory(object):
             lines.append(indent + "__df__k = pandas.DataFrame(np.column_stack(" + str(columns).replace("'", "") + "), \n    columns=" + str(headers) + ")")
         else:
             lines.append(indent + "__df__k = pandas.DataFrame(" + columns[0] + ")")
-            lines.append("if hasattr(" + columns[0] + ",  'columnames'):")
+            lines.append("if hasattr(" + columns[0] + ",  'colnames'):")
             lines.append("    __df__k.columns = " +  columns[0] + ".colnames")
+            lines.append("    __df__k.index   = " +  columns[0] + ".rownames")
+            lines.append("    index = True")
         lines.append(indent + "__dfs__{}.append(__df__k)".format(output.getId()))
         # save as variable in Tellurium
         lines.append(indent + "te.setLastReport(__df__k)")
@@ -1850,7 +1858,7 @@ class SEDMLCodeFactory(object):
             lines.append(
                 indent + "filename = os.path.join('{}', '{}_' + str(k) + '.{}')".format(self.outputDir, output.getId(), self.reportFormat))
             lines.append(
-                indent + "__df__k.to_csv(filename, sep=',', index=False)")
+                indent + "__df__k.to_csv(filename, sep=',', index=index)")
             lines.append(
                 indent + "print('Report {}: {{}}'.format(filename))".format(output.getId()))
         return lines
