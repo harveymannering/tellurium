@@ -303,18 +303,52 @@ symbol_values = {
 }
 
 term_values = {
+    "urn:sedml:analysis:L0Matrix": ("independent", "analysis_matrix", "L0_matrix"),
+    "urn:sedml:analysis:NrMatrix": ("independent", "analysis_matrix", "Nr_matrix"),
+    "urn:sedml:analysis:conservationMatrix": ("independent", "analysis_matrix", "conservation_matrix"),
+    "urn:sedml:analysis:controlCoefficient:scaled": ("dependent", "analysis_scalar", "cc_scaled"),
+    "urn:sedml:analysis:controlCoefficient:unscaled": ("dependent", "analysis_scalar", "cc_unscaled"),
+    "urn:sedml:analysis:controlCoefficientMatrix:scaled:concentration": ("independent", "analysis_matrix", "control_scaled_conc"),
+    "urn:sedml:analysis:controlCoefficientMatrix:scaled:flux": ("independent", "analysis_matrix", "control_scaled_flux"),
+    "urn:sedml:analysis:controlCoefficientMatrix:unscaled:concentration": ("independent", "analysis_matrix", "control_unscaled_conc"),
+    "urn:sedml:analysis:controlCoefficientMatrix:unscaled:flux": ("independent", "analysis_matrix", "control_unscaled_flux"),
+    "urn:sedml:analysis:eigenvalues:full": ("independent", "analysis_matrix", "eigenvalues_full"),
+    "urn:sedml:analysis:eigenvalues:reduced": ("independent", "analysis_matrix", "eigenvalues_reduced"),
+    "urn:sedml:analysis:elasticity:scaled": ("dependent", "analysis_scalar", "elasticity_scaled"),
+    "urn:sedml:analysis:elasticity:unscaled": ("dependent", "analysis_scalar", "elasticity_unscaled"),
+    "urn:sedml:analysis:elasticityMatrix:scaled": ("independent", "analysis_matrix", "elasticities_scaled"),
+    "urn:sedml:analysis:elasticityMatrix:unscaled": ("independent", "analysis_matrix", "elasticities_unscaled"),
+    "urn:sedml:analysis:jacobian:full": ("independent", "analysis_matrix", "jacobian_full"),
+    "urn:sedml:analysis:jacobian:reduced": ("independent", "analysis_matrix", "jacobian_reduced"),
+    "urn:sedml:analysis:kernelMatrix": ("independent", "analysis_matrix", "kernel_matrix"),
+    "urn:sedml:analysis:linkMatrix": ("independent", "analysis_matrix", "link_matrix"),
     "urn:sedml:analysis:rateOfChange": ("dependent", "symbol", "rateOfChange"),
-    "urn:sedml:analysis:jacobian:full": ("independent", "analysis", "jacobian_full"),
-    "urn:sedml:analysis:jacobian:reduced": ("independent", "analysis", "jacobian_reduced"),
-    "urn:sedml:analysis:stoichiometryMatrix:full": ("independent", "analysis", "stoichiometry_matrix_full"),
-    "urn:sedml:analysis:stoichiometryMatrix:reduced": ("independent", "analysis", "stoichiometry_matrix_reduced"),
+    "urn:sedml:analysis:stoichiometryMatrix:full": ("independent", "analysis_matrix", "stoichiometry_matrix_full"),
+    "urn:sedml:analysis:stoichiometryMatrix:reduced": ("independent", "analysis_matrix", "stoichiometry_matrix_reduced"),
 }
 
 analysis_function = {
-    "jacobian_full": "getFullJacobian()",
-    "jacobian_reduced": "getReducedJacobian()",
-    "stoichiometry_matrix_full": "getFullStoichiometryMatrix()",
-    "stoichiometry_matrix_reduced": "getReducedStoichiometryMatrix()",
+    "jacobian_full": "getFullJacobian",
+    "jacobian_reduced": "getReducedJacobian",
+    "stoichiometry_matrix_full": "getFullStoichiometryMatrix",
+    "stoichiometry_matrix_reduced": "getReducedStoichiometryMatrix",
+    "elasticities_scaled": "getScaledElasticityMatrix",
+    "elasticities_unscaled": "getUnscaledElasticityMatrix",
+    "cc_scaled": "getCC",
+    "cc_unscaled": "getuCC",
+    "elasticity_scaled": "getEE",
+    "elasticity_unscaled": "getuEE",
+    "eigenvalues_full": "getFullEigenValuesNamedArray",
+    "eigenvalues_reduced": "getReducedEigenValuesNamedArray",
+    "control_scaled_conc": "getScaledConcentrationControlCoefficientMatrix",
+    "control_scaled_flux": "getScaledFluxControlCoefficientMatrix",
+    "control_unscaled_conc": "getUnscaledConcentrationControlCoefficientMatrix",
+    "control_unscaled_flux": "getUnscaledFluxControlCoefficientMatrix",
+    "link_matrix": "getLinkMatrix",
+    "kernel_matrix": "getKMatrix",
+    "conservation_matrix": "getConservationMatrix",
+    "L0_matrix": "getL0Matrix",
+    "Nr_matrix": "getNrMatrix",
 }
 
 ######################################################################################################################
@@ -480,6 +514,7 @@ class SEDMLCodeFactory(object):
         self.outputDir = outputDir
         self.plotFormat = "png"
         self.reportFormat = "csv"
+        self.mentionedSpecies = []
 
         if not plottingEngine:
             plottingEngine = te.getPlottingEngine()
@@ -655,8 +690,7 @@ class SEDMLCodeFactory(object):
 
         return '\n'.join(lines)
 
-    @staticmethod
-    def modelChangeToPython(model, change):
+    def modelChangeToPython(self, model, change):
         """ Creates the apply change python string for given model and change.
 
         Currently only a very limited subset of model changes is supported.
@@ -689,10 +723,9 @@ class SEDMLCodeFactory(object):
                 selections.append(SEDMLCodeFactory.selectionFromVariable(var, mid))
             for selection in selections:
                 if selection.type=="species":
-                    sel = selection.id
-                    lines.append("{sel}_str = '[{sel}]'".format(sel=sel))
-                    lines.append("if {mid}.getHasOnlySubstanceUnits('{sel}'):".format(mid=mid, sel=sel))
-                    lines.append("    {sel}_str = '{sel}'".format(sel=sel))
+                    lines.extend(SEDMLCodeFactory.getSpeciesStringSetup(selection.id, mid))
+                if selection.type2=="species":
+                    lines.extend(SEDMLCodeFactory.getSpeciesStringSetup(selection.id, mid))
             for selection in selections:
                 expr = SEDMLCodeFactory.getSelectionString(selection.type, selection.id, init=True)
                 lines.append("__var__{} = {}[{}]".format(vid, mid, expr))
@@ -748,8 +781,7 @@ class SEDMLCodeFactory(object):
     # Here the main work is done,
     # transformation of tasks to python code
     ################################################################################################
-    @staticmethod
-    def taskToPython(doc, task):
+    def taskToPython(self, doc, task):
         """ Create python for arbitrary task (repeated or simple).
 
         :param doc:
@@ -760,7 +792,7 @@ class SEDMLCodeFactory(object):
         :rtype:
         """
         # If no DataGenerator references the task, no execution is necessary
-        dgs = SEDMLCodeFactory.getDataGeneratorsForTask(doc, task)
+        dgs = self.getDataGeneratorsForTask(doc, task)
         if len(dgs) == 0:
             return "# not part of any DataGenerator: {}".format(task.getId())
 
@@ -770,8 +802,8 @@ class SEDMLCodeFactory(object):
         # generate code for more complex task dependencies.
 
         # resolve task tree (order & dependency of tasks) & generate code
-        taskTree = SEDMLCodeFactory.createTaskTree(doc, rootTask=task)
-        return SEDMLCodeFactory.taskTreeToPython(doc, tree=taskTree)
+        taskTree = self.createTaskTree(doc, rootTask=task)
+        return self.taskTreeToPython(doc, tree=taskTree)
 
     class TaskNode(object):
         """ Tree implementation of task tree. """
@@ -866,13 +898,12 @@ class SEDMLCodeFactory(object):
             subtasks = [st for (stOrder, st) in sorted(zip(subtaskOrder, subtasks))]
         return subtasks
 
-    @staticmethod
-    def taskTreeToPython(doc, tree):
+    def taskTreeToPython(self, doc, tree):
         """ Python code generation from task tree. """
 
         # go forward through task tree
         lines = []
-        nodeStack = SEDMLCodeFactory.Stack()
+        nodeStack = self.Stack()
         treeNodes = [n for n in tree]
 
         # iterate over the tree
@@ -882,14 +913,14 @@ class SEDMLCodeFactory(object):
             # Create information for task
             # We are going down in the tree
             if taskType == libsedml.SEDML_TASK_REPEATEDTASK:
-                taskLines = SEDMLCodeFactory.repeatedTaskToPython(doc, node=node)
+                taskLines = self.repeatedTaskToPython(doc, node=node)
 
             elif taskType == libsedml.SEDML_TASK:
                 if node.parent and node.parent.task.getTypeCode()==libsedml.SEDML_TASK_REPEATEDTASK:
                     #The repeated task itself should have set up the simulation; here we just run it.
-                    taskLines = SEDMLCodeFactory.simpleTaskMainSim(doc, node)
+                    taskLines = self.simpleTaskMainSim(doc, node)
                 else:
-                    taskLines = SEDMLCodeFactory.simpleTaskToPython(doc=doc, node=node)
+                    taskLines = self.simpleTaskToPython(doc=doc, node=node)
             else:
                 lines.append("# Unsupported task: {}".format(taskType))
                 warnings.warn("Unsupported task: {}".format(taskType))
@@ -968,8 +999,7 @@ class SEDMLCodeFactory(object):
 
         return "\n".join(lines)
 
-    @staticmethod
-    def simpleTaskToPython(doc, node):
+    def simpleTaskToPython(self, doc, node):
         """ Creates the simulation python code for a given taskNode.
 
         The taskNodes are required to handle the relationships between
@@ -982,8 +1012,8 @@ class SEDMLCodeFactory(object):
         :return:
         :rtype:
         """
-        lines = SEDMLCodeFactory.simpleTaskSetup(doc, node)
-        lines.extend(SEDMLCodeFactory.simpleTaskMainSim(doc, node))
+        lines = self.simpleTaskSetup(doc, node)
+        lines.extend(self.simpleTaskMainSim(doc, node))
         return lines
         
 
@@ -1072,8 +1102,7 @@ class SEDMLCodeFactory(object):
         return lines
 
 
-    @staticmethod
-    def simpleTaskParentInit(doc, node):
+    def simpleTaskParentInit(self, doc, node):
         """ Creates the simulation python code for a given taskNode.
 
         The taskNodes are required to handle the relationships between
@@ -1134,16 +1163,15 @@ class SEDMLCodeFactory(object):
                 for var in setValue.getListOfVariables():
                     vid = var.getId()
                     mid = var.getModelReference()
-                    selections.append(SEDMLCodeFactory.selectionFromVariable(var, mid))
+                    selections.append(self.selectionFromVariable(var, mid))
                 for selection in selections:
                     if selection.type=="species":
-                        sel = selection.id
-                        lines.append("{sel}_str = '[{sel}]'".format(sel=sel))
-                        lines.append("if {mid}.getHasOnlySubstanceUnits('{sel}'):".format(mid=mid, sel=sel))
-                        lines.append("    {sel}_str = '{sel}'".format(sel=sel))
+                        lines.extend(self.getSpeciesStringSetup(selection.id, mid))
+                    if selection.type2=="species":
+                        lines.extend(self.getSpeciesStringSetup(selection.id, mid))
                 for selection in selections:
-                    selection = SEDMLCodeFactory.selectionFromVariable(var, mid)
-                    expr = SEDMLCodeFactory.getSelectionString(selection.type, selection.id, init=True)
+                    selection = self.selectionFromVariable(var, mid)
+                    expr = self.getSelectionString(selection.type, selection.id, init=True)
 
                     # create variable
                     lines.append("__value__{} = {}[{}]".format(vid, mid, expr))
@@ -1157,8 +1185,7 @@ class SEDMLCodeFactory(object):
                              )
         return lines
 
-    @staticmethod
-    def simpleTaskMainSim(doc, node):
+    def simpleTaskMainSim(self, doc, node):
         """ Creates the simulation python code for a given taskNode.
 
         The taskNodes are required to handle the relationships between
@@ -1171,7 +1198,7 @@ class SEDMLCodeFactory(object):
         :return:
         :rtype:
         """
-        lines = SEDMLCodeFactory.simpleTaskParentInit(doc, node)
+        lines = self.simpleTaskParentInit(doc, node)
 
         task = node.task
 
@@ -1190,16 +1217,14 @@ class SEDMLCodeFactory(object):
 
         # <selections> of all parents
         # ---------------------------
-        selections, selstrs = SEDMLCodeFactory.selectionsForTask(doc=doc, task=node.task)
+        selections, selstrs = self.selectionsForTask(doc=doc, task=node.task)
         for p in parents:
-            psels, pselstrs = SEDMLCodeFactory.selectionsForTask(doc=doc, task=p.task)
+            psels, pselstrs = self.selectionsForTask(doc=doc, task=p.task)
             selections.update(psels)
             selstrs.update(pselstrs)
 
         for sel in selstrs:
-            lines.append("{sel}_str = '[{sel}]'".format(sel=sel))
-            lines.append("if {mid}.getHasOnlySubstanceUnits('{sel}'):".format(mid=mid, sel=sel))
-            lines.append("    {sel}_str = '{sel}'".format(sel=sel))
+            lines.extend(self.getSpeciesStringSetup(sel, mid))
             
         sellist = "["
         for sel in selections:
@@ -1435,7 +1460,7 @@ class SEDMLCodeFactory(object):
                     if modelId=="":
                         raise RuntimeError("Unable to determine which model a referenced task variable is from.")
                     selection = SEDMLCodeFactory.selectionFromVariable(var, modelId)
-                    if selection.type=="analysis":
+                    if "analysis" in selection.ftype:
                         continue
                     expr = SEDMLCodeFactory.getSelectionString(selection.type, selection.id, init=False)
                     if selection.type == "species":
@@ -1540,8 +1565,7 @@ class SEDMLCodeFactory(object):
             warnings.warn("Unsupported AlgorithmParameter: {} = {})".format(kid, value))
             return None
 
-    @staticmethod
-    def targetToPython(xpath, value, modelId):
+    def targetToPython(self, xpath, value, modelId):
         """ Creates python line for given xpath target and value.
         :param xpath:
         :type xpath:
@@ -1555,11 +1579,8 @@ class SEDMLCodeFactory(object):
         if target:
             # initial species value
             if target.type == "species":
-                sel = target.id
-                lines.append("{sel}_str = '[{sel}]'".format(sel=sel))
-                lines.append("if {mid}.getHasOnlySubstanceUnits('{sel}'):".format(mid=modelId, sel=sel))
-                lines.append("    {sel}_str = '{sel}'".format(sel=sel))
-            expr = SEDMLCodeFactory.getSelectionString(target.type, target.id, init=True)
+                lines.extend(self.getSpeciesStringSetup(target.id, mid))
+            expr = self.getSelectionString(target.type, target.id, init=True)
             lines.append("{}[{}] = {}".format(modelId, expr, value))
         else:
             lines.append("# Unsupported target xpath: {}".format(xpath))
@@ -1568,7 +1589,7 @@ class SEDMLCodeFactory(object):
 
     @staticmethod
     def getSelectionFrom(cvs, target, modelId):
-        Selection = namedtuple('Selection', 'id type function id2 type2')
+        Selection = namedtuple('Selection', 'id type function ftype id2 type2')
         if cvs != "":
             if cvs not in symbol_values:
                 raise ValueError("Unknown symbol value '" + cvs + "'")
@@ -1578,22 +1599,22 @@ class SEDMLCodeFactory(object):
             if dep=="independent":
                 if target != "":
                     raise ValueError("Cannot set both the 'target' and the 'symbol' if the symbol is" + cvs +  ".")
-                return Selection(sid, stype, "", "", "")
+                return Selection(sid, stype, "", "", "", "")
             else:
                 if target == "":
                     raise ValueError("Must also set the 'target' when the 'symbol' is" + cvs +  ".")
                 target = SEDMLCodeFactory._resolveXPath(target, modelId)
                 if stype=="symbol":
-                    return Selection(target.id, sid, "", "", "")
+                    return Selection(target.id, sid, "", "", "", "")
                 else:
-                    return Selection(target.id, target.type, sid, "", "")
+                    return Selection(target.id, target.type, sid, "", "", "")
         # use xpath
         elif target != "":
             target = SEDMLCodeFactory._resolveXPath(target, modelId)
-            return Selection(target.id, target.type, "", "", "")
+            return Selection(target.id, target.type, "", "", "", "")
 
         else:
-            return Selection("", "", "", "", "")
+            return Selection("", "", "", "", "", "")
 
 
     @staticmethod
@@ -1607,9 +1628,9 @@ class SEDMLCodeFactory(object):
         :param var: variable to resolve
         :type var: SedVariable
         :return: a single selection
-        :rtype: Selection (namedtuple: id type function id2, type2)
+        :rtype: Selection (namedtuple: id type function ftype id2, type2)
         """
-        Selection = namedtuple('Selection', 'id type function id2 type2')
+        Selection = namedtuple('Selection', 'id type function ftype id2 type2')
 
         # parse symbol expression
         sel1 = SEDMLCodeFactory.getSelectionFrom(var.getSymbol(), var.getTarget(), modelId)
@@ -1622,19 +1643,27 @@ class SEDMLCodeFactory(object):
                 raise ValueError("Unknown term value '" + term + "' for dependent variable '" + var.getId() + "'.")
             (dep, dvtype, sid) = term_values[term]
             sel2 = SEDMLCodeFactory.getSelectionFrom(var.getSymbol2(), var.getTarget2(), modelId)
+            sel1type = sel1.type
+            sel2type = sel2.type
             if dep=="independent":
                 if sel1.id != "" or sel2.id !=  "":
                     raise ValueError("Cannot set the 'target' or the 'symbol' when the term is '" + term +  "'.")
-                return Selection(sid, dvtype, "", "", "")
+                return Selection("", "", sid, dvtype, "", "")
+            else:
+                #In Tellurium, no function takes the '[id]' form of any argument
+                if sel1type=="species":
+                    sel1type = "amount"
+                if sel2type=="species":
+                    sel2type = "amount"
             
             if sid=="rateOfChange":
                 if sel2.id != "time":
                     raise ValueError("Tellurium does not support arbitrary rates of change, only rates of change of variables with respect to time.  '" + var.getId() + "' is set to the rate of change of '" + sel1.id + "' with respect to '" + sel2.id + "'.")
                 if sel1.type == "concentration":
                     raise ValueError("Tellurium does not support calculating the rate of change of the concentration of a species, only the rate of change of the amount of the species ('" + sel1.getId() + "').")
-                return Selection(sel1.id, sid, "", "", "")
+                return Selection(sel1.id, sid, "", "", "", "")
 
-            return Selection(sel1.id, sel1.type, sid, sel2.id, sel2.type)
+            return Selection(sel1.id, sel1type, sid, dvtype, sel2.id, sel2type)
         return sel1
                 
             
@@ -1694,6 +1723,8 @@ class SEDMLCodeFactory(object):
 
     @staticmethod
     def getSelectionString(stype, sid, init=False):
+        if sid=="":
+            return "";
         if stype == "species":
             sid = "{}_str".format(sid)
         elif stype == "concentration":
@@ -1714,8 +1745,23 @@ class SEDMLCodeFactory(object):
                 sid = "'" + sid + "'"
         return sid
 
-    @staticmethod
-    def dataGeneratorToPython(doc, generator):
+    def setupSelectionStrings(self, selection, mid):
+        lines = []
+        if selection.type=="species" and selection.id not in self.mentionedSpecies:
+            lines.extend(self.getSpeciesStringSetup(selection.id, mid))
+        if selection.type2=="species" and selection.id2 not in self.mentionedSpecies:
+            lines.extend(self.getSpeciesStringSetup(selection.id2, mid))
+        return lines
+
+    def getSpeciesStringSetup(self, sid, mid):
+        lines = []
+        lines.append("{sid}_str = '[{sid}]'".format(sid=sid))
+        lines.append("if {mid}.getHasOnlySubstanceUnits('{sid}'):".format(mid=mid, sid=sid))
+        lines.append("    {sid}_str = '{sid}'".format(sid=sid))
+        self.mentionedSpecies.append(sid)
+        return lines
+
+    def dataGeneratorToPython(self, doc, generator):
         """ Create variable from the data generators and the simulation results and data sources.
 
             The data of repeatedTasks is handled differently depending
@@ -1749,7 +1795,7 @@ class SEDMLCodeFactory(object):
                 if isinstance(task, libsedml.SedTask):
                     modelId = task.getModelReference()
                 elif isinstance(task, libsedml.SedRepeatedTask):
-                    modvec = SEDMLCodeFactory.getModelsFrom(task)
+                    modvec = self.getModelsFrom(task)
                     if len(modvec) == 1:
                         modelId = modvec[0]
                 if modelId=="" and isinstance(task, libsedml.SedTask):
@@ -1759,7 +1805,7 @@ class SEDMLCodeFactory(object):
                 if modelId=="":
                     raise RuntimeError("Unable to determine which model a referenced task variable is from.")
 
-                selection = SEDMLCodeFactory.selectionFromVariable(var, modelId)
+                selection = self.selectionFromVariable(var, modelId)
                 isTime = False
                 if selection.type == "symbol" and selection.id == "time":
                     isTime = True
@@ -1769,11 +1815,23 @@ class SEDMLCodeFactory(object):
                     resetModel = task.getResetModel()
 
                 sid = SEDMLCodeFactory.getSelectionString(selection.type, selection.id, init=False)
+                sid2 = SEDMLCodeFactory.getSelectionString(selection.type2, selection.id2, init=False)
+                
+                lines.extend(self.setupSelectionStrings(selection, modelId))
 
                 # lines.append("foo")
                 # Series of curves
-                if selection.type == "analysis":
-                    lines.append("__var__{} = {}.{}".format(varId, modelId, analysis_function[selection.id]))
+                if "analysis" in selection.ftype:
+                    arguments = "("
+                    if sid != "":
+                        arguments += sid + ", "
+                    if sid2 != "":
+                        arguments += sid2
+                    arguments += ")"
+                    analysis = "{}.{}{}".format(modelId, analysis_function[selection.function], arguments)
+                    if selection.ftype =="analysis_scalar":
+                        analysis = "np.array([" + analysis + "])"
+                    lines.append("__var__{} = {}".format(varId, analysis))
                 elif resetModel is True:
                     # If each entry in the task consists of a single point (e.g. steady state scan)
                     # , concatenate the points. Otherwise, plot as separate curves.
@@ -2096,7 +2154,7 @@ class SEDMLCodeFactory(object):
             yLabel = yId
             if curve.isSetName():
                 yLabel = "{}".format(curve.getName())
-            elif dgy.isSetName():
+            elif dgy and dgy.isSetName():
                 yLabel = "{}".format(dgy.getName())
 
 
