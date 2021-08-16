@@ -173,6 +173,8 @@ class MatplotlibFigure(PlottingFigure):
             plt.savefig(self.savefig, dpi=self.dpi, bbox_inches='tight')
             print('saved plot to {}'.format(self.savefig))
 
+        #LS DEBUG
+        #plt.savefig("test_plot.png")
         plt.show()
 
         return fig
