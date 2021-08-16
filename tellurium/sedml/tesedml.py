@@ -293,38 +293,40 @@ surface_types = {
 
 symbol_values = {
     "urn:sedml:symbol:time": ("independent", "symbol", "time"),
-    "urn:sedml:symbol:amount": ("dependent", "symbol", "amount"),
-    "urn:sedml:symbol:concentration": ("dependent", "symbol", "concentration"),
-    "urn:sedml:symbol:particleNumber": ("dependent", "symbol", "particleNumber"),
-    "urn:sedml:function:average": ("dependent", "function", "average"),
-    "urn:sedml:function:std": ("dependent", "function", "std"),
-    "urn:sedml:function:max": ("dependent", "function", "max"),
-    "urn:sedml:function:min": ("dependent", "function", "min"),
+    "KISAO:0000832": ("independent", "symbol", "time"),
+    "KISAO:0000836": ("dependent", "symbol", "amount"),
+    "KISAO:0000838": ("dependent", "symbol", "concentration"),
+    "KISAO:0000837": ("dependent", "symbol", "particleNumber"),
+    "KISAO:0000825": ("dependent", "function", "average"),
+    "KISAO:0000826": ("dependent", "function", "std"),
+    "KISAO:0000828": ("dependent", "function", "max"),
+    "KISAO:0000829": ("dependent", "function", "min"),
+    "KISAO:0000827": ("dependent", "function", "sem"),
 }
 
 term_values = {
-    "urn:sedml:analysis:L0Matrix": ("independent", "analysis_matrix", "L0_matrix"),
-    "urn:sedml:analysis:NrMatrix": ("independent", "analysis_matrix", "Nr_matrix"),
+    "KISAO:0000818": ("independent", "analysis_matrix", "L0_matrix"),
+    "KISAO:0000819": ("independent", "analysis_matrix", "Nr_matrix"),
     "urn:sedml:analysis:conservationMatrix": ("independent", "analysis_matrix", "conservation_matrix"),
-    "urn:sedml:analysis:controlCoefficient:scaled": ("dependent", "analysis_scalar", "cc_scaled"),
-    "urn:sedml:analysis:controlCoefficient:unscaled": ("dependent", "analysis_scalar", "cc_unscaled"),
-    "urn:sedml:analysis:controlCoefficientMatrix:scaled:concentration": ("independent", "analysis_matrix", "control_scaled_conc"),
-    "urn:sedml:analysis:controlCoefficientMatrix:scaled:flux": ("independent", "analysis_matrix", "control_scaled_flux"),
-    "urn:sedml:analysis:controlCoefficientMatrix:unscaled:concentration": ("independent", "analysis_matrix", "control_unscaled_conc"),
-    "urn:sedml:analysis:controlCoefficientMatrix:unscaled:flux": ("independent", "analysis_matrix", "control_unscaled_flux"),
-    "urn:sedml:analysis:eigenvalues:full": ("independent", "analysis_matrix", "eigenvalues_full"),
-    "urn:sedml:analysis:eigenvalues:reduced": ("independent", "analysis_matrix", "eigenvalues_reduced"),
-    "urn:sedml:analysis:elasticity:scaled": ("dependent", "analysis_scalar", "elasticity_scaled"),
-    "urn:sedml:analysis:elasticity:unscaled": ("dependent", "analysis_scalar", "elasticity_unscaled"),
-    "urn:sedml:analysis:elasticityMatrix:scaled": ("independent", "analysis_matrix", "elasticities_scaled"),
-    "urn:sedml:analysis:elasticityMatrix:unscaled": ("independent", "analysis_matrix", "elasticities_unscaled"),
-    "urn:sedml:analysis:jacobian:full": ("independent", "analysis_matrix", "jacobian_full"),
-    "urn:sedml:analysis:jacobian:reduced": ("independent", "analysis_matrix", "jacobian_reduced"),
-    "urn:sedml:analysis:kernelMatrix": ("independent", "analysis_matrix", "kernel_matrix"),
-    "urn:sedml:analysis:linkMatrix": ("independent", "analysis_matrix", "link_matrix"),
-    "urn:sedml:analysis:rateOfChange": ("dependent", "symbol", "rateOfChange"),
-    "urn:sedml:analysis:stoichiometryMatrix:full": ("independent", "analysis_matrix", "stoichiometry_matrix_full"),
-    "urn:sedml:analysis:stoichiometryMatrix:reduced": ("independent", "analysis_matrix", "stoichiometry_matrix_reduced"),
+    "KISAO:0000802": ("dependent", "analysis_scalar", "cc_scaled"),
+    "KISAO:0000803": ("dependent", "analysis_scalar", "cc_unscaled"),
+    "KISAO:0000835": ("independent", "analysis_matrix", "control_scaled_conc"),
+    "KISAO:0000815": ("independent", "analysis_matrix", "control_scaled_flux"),
+    "KISAO:0000801": ("independent", "analysis_matrix", "control_unscaled_conc"),
+    "KISAO:0000814": ("independent", "analysis_matrix", "control_unscaled_flux"),
+    "KISAO:0000813": ("independent", "analysis_matrix", "eigenvalues_full"),
+    "KISAO:0000810": ("independent", "analysis_matrix", "eigenvalues_reduced"),
+    "KISAO:0000807": ("dependent", "analysis_scalar", "elasticity_scaled"),
+    "KISAO:0000805": ("dependent", "analysis_scalar", "elasticity_unscaled"),
+    "KISAO:0000806": ("independent", "analysis_matrix", "elasticities_scaled"),
+    "KISAO:0000804": ("independent", "analysis_matrix", "elasticities_unscaled"),
+    "KISAO:0000812": ("independent", "analysis_matrix", "jacobian_full"),
+    "KISAO:0000809": ("independent", "analysis_matrix", "jacobian_reduced"),
+    "KISAO:0000817": ("independent", "analysis_matrix", "kernel_matrix"),
+    "KISAO:0000816": ("independent", "analysis_matrix", "link_matrix"),
+    "KISAO:0000834": ("dependent", "symbol", "rateOfChange"),
+    "KISAO:0000811": ("independent", "analysis_matrix", "stoichiometry_matrix_full"),
+    "KISAO:0000808": ("independent", "analysis_matrix", "stoichiometry_matrix_reduced"),
 }
 
 analysis_function = {
@@ -686,7 +688,7 @@ class SEDMLCodeFactory(object):
 
         # apply model changes
         for change in self.model_changes[mid]:
-            lines.extend(SEDMLCodeFactory.modelChangeToPython(model, change))
+            lines.extend(self.modelChangeToPython(model, change))
 
         return '\n'.join(lines)
 
@@ -711,7 +713,7 @@ class SEDMLCodeFactory(object):
             # resolve target change
             value = change.getNewValue()
             lines.append("# {} {}".format(xpath, value))
-            lines.extend(SEDMLCodeFactory.targetToPython(xpath, value, modelId=mid))
+            lines.extend(self.targetToPython(xpath, value, modelId=mid))
 
         elif change.getTypeCode() == libsedml.SEDML_CHANGE_COMPUTECHANGE:
             variables = {}
@@ -720,20 +722,20 @@ class SEDMLCodeFactory(object):
             selections = []
             for var in change.getListOfVariables():
                 vid = var.getId()
-                selections.append(SEDMLCodeFactory.selectionFromVariable(var, mid))
+                selections.append(self.selectionFromVariable(var, mid))
             for selection in selections:
                 if selection.type=="species":
-                    lines.extend(SEDMLCodeFactory.getSpeciesStringSetup(selection.id, mid))
+                    lines.extend(self.getSpeciesStringSetup(selection.id, mid))
                 if selection.type2=="species":
-                    lines.extend(SEDMLCodeFactory.getSpeciesStringSetup(selection.id, mid))
+                    lines.extend(self.getSpeciesStringSetup(selection.id, mid))
             for selection in selections:
-                expr = SEDMLCodeFactory.getSelectionString(selection.type, selection.id, init=True)
+                expr = self.getSelectionString(selection.type, selection.id, init=True)
                 lines.append("__var__{} = {}[{}]".format(vid, mid, expr))
                 variables[vid] = "__var__{}".format(vid)
 
             # value is calculated with the current state of model
             value = evaluableMathML(change.getMath(), variables=variables)
-            lines.extend(SEDMLCodeFactory.targetToPython(xpath, value, modelId=mid))
+            lines.extend(self.targetToPython(xpath, value, modelId=mid))
 
         elif change.getTypeCode() in [libsedml.SEDML_CHANGE_REMOVEXML,
                                       libsedml.SEDML_CHANGE_ADDXML,
@@ -1179,9 +1181,9 @@ class SEDMLCodeFactory(object):
                     variables[vid] = "__value__{}".format(vid)
 
                 # value is calculated with the current state of model
-                lines.extend(SEDMLCodeFactory.targetToPython(xpath=setValue.getTarget(),
-                                                             value=evaluableMathML(setValue.getMath(), variables=variables),
-                                                             modelId=setValue.getModelReference())
+                lines.extend(self.targetToPython(xpath=setValue.getTarget(),
+                                                 value=evaluableMathML(setValue.getMath(), variables=variables),
+                                                 modelId=setValue.getModelReference())
                              )
         return lines
 
@@ -1351,7 +1353,7 @@ class SEDMLCodeFactory(object):
                         vid = var.getId()
                         mid = var.getModelReference()
                         selection = SEDMLCodeFactory.selectionFromVariable(var, mid)
-                        expr = getSelectionString(selection.type, selection.id)
+                        expr = self.getSelectionString(selection.type, selection.id)
                         lines.append("__value__{} = {}['{}']".format(vid, mid, expr))
                         variables[vid] = "__value__{}".format(vid)
 
@@ -1579,7 +1581,7 @@ class SEDMLCodeFactory(object):
         if target:
             # initial species value
             if target.type == "species":
-                lines.extend(self.getSpeciesStringSetup(target.id, mid))
+                lines.extend(self.getSpeciesStringSetup(target.id, modelId))
             expr = self.getSelectionString(target.type, target.id, init=True)
             lines.append("{}[{}] = {}".format(modelId, expr, value))
         else:
@@ -1715,9 +1717,11 @@ class SEDMLCodeFactory(object):
             raise ValueError("Unsupported target in xpath: {}".format(xpath))
 
     @staticmethod
-    def getNumpyFunctionFor(fn):
+    def getFunctionFor(fn):
         samenames = ["average", "max", "min", "std"]
         if fn in samenames:
+            return "np." + fn
+        if fn in ["sem"]:
             return fn
         raise ValueError("Unknown function " + fn)
 
@@ -1842,11 +1846,11 @@ class SEDMLCodeFactory(object):
                         if selection.function == "":
                             lines.append("__var__{} = np.column_stack([sim[{}] for sim in {}])".format(varId, sid, taskId))
                         else:
-                            npfn = SEDMLCodeFactory.getNumpyFunctionFor(selection.function)
+                            npfn = SEDMLCodeFactory.getFunctionFor(selection.function)
                             axis = 0
                             if (selection.id2 == taskId):
                                 axis=1
-                            lines.append("__var__{} = np.{}([sim[{}] for sim in {}], axis={})".format(varId, npfn, sid, taskId, axis))
+                            lines.append("__var__{} = {}([sim[{}] for sim in {}], axis={})".format(varId, npfn, sid, taskId, axis))
                             lines.append("__var__{} = np.transpose(np.tile(__var__{}, (len({}), 1)))".format(varId, varId, taskId))
                             
                 else:

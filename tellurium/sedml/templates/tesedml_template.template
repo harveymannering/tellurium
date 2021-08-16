@@ -31,6 +31,7 @@ from tellurium.sedml.mathml import *
 from tellurium.sedml.tesedml import process_trace, terminate_trace, fix_endpoints
 
 import numpy as np
+from scipy.stats import sem
 import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d
 try:
