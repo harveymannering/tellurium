@@ -1637,12 +1637,10 @@ class SEDMLCodeFactory(object):
         # parse symbol expression
         sel1 = SEDMLCodeFactory.getSelectionFrom(var.getSymbol(), var.getTarget(), modelId)
         
-        if var.getTypeCode()==libsedml.SEDML_DEPENDENTVARIABLE:
-            if not var.isSetTerm():
-                raise ValueError("Dependent variable '" + var.getId() + "' must set the 'term' attribute.")
+        if var.isSetTerm():
             term = var.getTerm()
             if term not in term_values:
-                raise ValueError("Unknown term value '" + term + "' for dependent variable '" + var.getId() + "'.")
+                raise ValueError("Unknown term value '" + term + "' for variable '" + var.getId() + "'.")
             (dep, dvtype, sid) = term_values[term]
             sel2 = SEDMLCodeFactory.getSelectionFrom(var.getSymbol2(), var.getTarget2(), modelId)
             sel1type = sel1.type
