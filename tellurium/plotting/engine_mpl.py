@@ -174,7 +174,7 @@ class MatplotlibFigure(PlottingFigure):
             print('saved plot to {}'.format(self.savefig))
 
         #LS DEBUG
-        #plt.savefig("test_plot.png")
+        #plt.savefig("test_plot.png") 
         plt.show()
 
         return fig
